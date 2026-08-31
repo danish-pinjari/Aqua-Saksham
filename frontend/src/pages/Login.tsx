@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Radio, KeyRound, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { authService } from '../services/authService';
@@ -11,7 +11,7 @@ interface LoginProps {
 export const Login = ({ onNavigate }: LoginProps) => {
   const { login } = useAuth();
   const [receiverId, setReceiverId] = useState('AS-RX-001');
-  const [pin, setPin] = useState('');
+  const [pin, setPin] = useState('AquaRx001@2026');
   const [showPin, setShowPin] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
@@ -23,9 +23,9 @@ export const Login = ({ onNavigate }: LoginProps) => {
     setError(null);
 
     const cleanId = (receiverId || '').trim().toUpperCase();
-    const cleanPin = (pin || '').trim();
+    const cleanKey = (pin || '').trim();
 
-    if (!cleanId || !cleanPin) {
+    if (!cleanId || !cleanKey) {
       setError('Please enter Receiver ID and Receiver Key.');
       return;
     }
@@ -33,7 +33,7 @@ export const Login = ({ onNavigate }: LoginProps) => {
     setIsLoading(true);
 
     try {
-      const res = await authService.login(cleanId, cleanPin, rememberMe);
+      const res = await authService.login(cleanId, cleanKey, rememberMe);
       
       if (res.success && res.receiver) {
         login(res.receiver);

@@ -39,22 +39,21 @@ export const authService = {
   },
 
   async login(receiverId: string, pin: string, rememberMe = true): Promise<AuthResponse> {
-    const cleanId = receiverId.trim().toUpperCase();
-    const cleanKey = pin.trim();
+    const cleanId = (receiverId || '').trim().toUpperCase();
+    const cleanKey = (pin || '').trim();
 
     if (!cleanId || !cleanKey) {
-      return { success: false, error: 'Please enter Receiver ID and Receiver Key.' };
+      return { success: false, error: 'Please enter Receiver ID and Key.' };
     }
 
-    // Check against preset keys or backend validation
     const preset = PRESET_RECEIVERS[cleanId];
-    const isKeyValid = preset ? preset.validKeys.includes(cleanKey) : cleanKey.length >= 4;
+    const isMatched = preset ? preset.validKeys.includes(cleanKey) : cleanKey.length >= 4;
 
-    if (!isKeyValid) {
-      return { success: false, error: 'Invalid Receiver Key for ' + cleanId };
+    if (!isMatched) {
+      return { success: false, error: 'Invalid Receiver Key. (Use: AquaRx001@2026 or 123456)' };
     }
 
-    const activeReceiver = preset ? preset.identity : {
+    const activeReceiver: ReceiverIdentity = preset ? preset.identity : {
       receiver_id: cleanId,
       node_id: 1,
       username: `${cleanId} Node Station`,
@@ -66,16 +65,12 @@ export const authService = {
     storage.setItem(TOKEN_KEY, token);
     storage.setItem(RECEIVER_KEY, JSON.stringify(activeReceiver));
 
-    // Background sync with Render Backend
-    try {
-      fetch(`${BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiver_id: cleanId, pin: cleanKey })
-      }).catch(() => {});
-    } catch {
-      // Background ping
-    }
+    // Non-blocking background sync
+    fetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receiver_id: cleanId, pin: cleanKey })
+    }).catch(() => {});
 
     return {
       success: true,
