@@ -1,5 +1,11 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authService, UserProfile } from '../services/authService';
+import { authService } from '../services/authService';
+
+export type UserProfile = {
+  fullName?: string;
+  name?: string;
+  email?: string;
+};
 
 export interface ReceiverIdentity {
   receiver_id: string;
@@ -40,14 +46,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const existing = authService.getCurrentUser();
+    const existing = authService.getCurrentReceiver();
     if (existing) {
-      setUser(existing);
       setReceiver({
-        receiver_id: (existing as any).receiver_id || 'AS-RX-001',
-        node_id: (existing as any).node_id || 1,
-        username: existing.fullName || existing.name || 'Community Well 01',
-        status: 'Online'
+        ...existing,
+        status: existing.status || 'Online'
+      });
+      setUser({
+        fullName: existing.username || 'Administrator',
+        name: existing.username || 'Administrator',
+        email: `${existing.receiver_id.toLowerCase()}@aquasaksham.com`,
+        receiver_id: existing.receiver_id,
+        node_id: existing.node_id,
+        username: existing.username
       });
     }
     setIsLoading(false);
