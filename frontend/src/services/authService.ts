@@ -1,6 +1,9 @@
 import { ReceiverIdentity } from '../types';
 
-export interface UserProfile extends ReceiverIdentity {}
+export interface UserProfile extends ReceiverIdentity {
+  fullName: any;
+  name: any;
+}
 
 export interface AuthResponse {
   success: boolean;

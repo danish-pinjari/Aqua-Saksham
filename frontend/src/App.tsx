@@ -10,11 +10,14 @@ import { AIAnalysis } from './pages/AIAnalysis';
 import { Settings } from './pages/Settings';
 import { About } from './pages/About';
 import { Login } from './pages/Login';
+import { Signup } from './pages/Signup';
+import { ForgotPassword } from './pages/ForgotPassword';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 function MainAppContent() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [authView, setAuthView] = useState<'login' | 'signup' | 'forgot-password'>('login');
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -26,10 +29,28 @@ function MainAppContent() {
     );
   }
 
+  // Auth views
   if (!isAuthenticated) {
-    return <Login onSuccess={() => setCurrentPage('dashboard')} />;
+    if (authView === 'signup') {
+      return <Signup onNavigate={() => setAuthView('login')} />;
+    }
+    if (authView === 'forgot-password') {
+      return <ForgotPassword onNavigate={() => setAuthView('login')} />;
+    }
+    return (
+      <Login
+        onNavigate={(target) => {
+          if (target === 'dashboard') {
+            setCurrentPage('dashboard');
+          } else {
+            setAuthView(target as 'login' | 'signup' | 'forgot-password');
+          }
+        }}
+      />
+    );
   }
 
+  // Dashboard views
   const renderDashboardContent = () => {
     switch (currentPage) {
       case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;
