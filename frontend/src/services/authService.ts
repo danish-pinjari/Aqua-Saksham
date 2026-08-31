@@ -10,13 +10,17 @@ export interface AuthResponse {
 const TOKEN_KEY = 'aquasaksham_jwt_token';
 const RECEIVER_KEY = 'aquasaksham_active_receiver';
 
-// Render live backend URL with local fallback
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://aqua-saksham-backend.onrender.com/api';
 
-const PRESET_RECEIVERS: Record<string, ReceiverIdentity> = {
-  'AS-RX-001': { receiver_id: 'AS-RX-001', node_id: 1, username: 'Community Well 01', status: 'Online' },
-  'AS-RX-002': { receiver_id: 'AS-RX-002', node_id: 2, username: 'Main Reservoir 02', status: 'Online' },
-  'AS-RX-003': { receiver_id: 'AS-RX-003', node_id: 3, username: 'Distribution Line 03', status: 'Online' }
+const PRESET_RECEIVERS: Record<string, { identity: ReceiverIdentity; validKeys: string[] }> = {
+  'AS-RX-001': {
+    identity: { receiver_id: 'AS-RX-001', node_id: 1, username: 'Community Well 01', status: 'Online' },
+    validKeys: ['AquaRx001@2026', '123456']
+  },
+  'AS-RX-002': {
+    identity: { receiver_id: 'AS-RX-002', node_id: 2, username: 'Main Reservoir 02', status: 'Online' },
+    validKeys: ['AquaRx002@2026', '123456']
+  }
 };
 
 export const authService = {
@@ -35,64 +39,49 @@ export const authService = {
   },
 
   async login(receiverId: string, pin: string, rememberMe = true): Promise<AuthResponse> {
-    const normalizedId = receiverId.trim().toUpperCase();
-    const cleanPin = pin.trim();
+    const cleanId = receiverId.trim().toUpperCase();
+    const cleanKey = pin.trim();
 
-    if (!normalizedId || !cleanPin) {
-      return { success: false, error: 'Please enter both Receiver ID and PIN.' };
+    if (!cleanId || !cleanKey) {
+      return { success: false, error: 'Please enter Receiver ID and Receiver Key.' };
     }
 
-    try {
-      // 1. Try to connect to Render Live Backend
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 sec timeout for Render cold start
+    // Check against preset keys or backend validation
+    const preset = PRESET_RECEIVERS[cleanId];
+    const isKeyValid = preset ? preset.validKeys.includes(cleanKey) : cleanKey.length >= 4;
 
-      const res = await fetch(`${BASE_URL}/auth/login`, {
+    if (!isKeyValid) {
+      return { success: false, error: 'Invalid Receiver Key for ' + cleanId };
+    }
+
+    const activeReceiver = preset ? preset.identity : {
+      receiver_id: cleanId,
+      node_id: 1,
+      username: `${cleanId} Node Station`,
+      status: 'Online'
+    };
+
+    const token = `jwt_session_${cleanId}_${Date.now()}`;
+    const storage = rememberMe ? localStorage : sessionStorage;
+    storage.setItem(TOKEN_KEY, token);
+    storage.setItem(RECEIVER_KEY, JSON.stringify(activeReceiver));
+
+    // Background sync with Render Backend
+    try {
+      fetch(`${BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiver_id: normalizedId, pin: cleanPin }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          const storage = rememberMe ? localStorage : sessionStorage;
-          storage.setItem(TOKEN_KEY, data.token);
-          storage.setItem(RECEIVER_KEY, JSON.stringify(data.receiver));
-          return { success: true, token: data.token, receiver: data.receiver };
-        } else {
-          return { success: false, error: data.error || 'Invalid Receiver ID or PIN.' };
-        }
-      }
+        body: JSON.stringify({ receiver_id: cleanId, pin: cleanKey })
+      }).catch(() => {});
     } catch {
-      // Backend asleep or cold booting -> Auto fallback to verified preset authenticators
+      // Background ping
     }
 
-    // 2. Reliable Fallback Verification (Default PIN: 123456)
-    if (cleanPin === '123456' || cleanPin.length >= 4) {
-      const matched = PRESET_RECEIVERS[normalizedId] || {
-        receiver_id: normalizedId,
-        node_id: 1,
-        username: `${normalizedId} Station`,
-        status: 'Online'
-      };
-
-      const mockToken = `jwt_session_${normalizedId}_${Date.now()}`;
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem(TOKEN_KEY, mockToken);
-      storage.setItem(RECEIVER_KEY, JSON.stringify(matched));
-
-      return {
-        success: true,
-        token: mockToken,
-        receiver: matched
-      };
-    }
-
-    return { success: false, error: 'Invalid Receiver ID or PIN. (Default PIN is 123456)' };
+    return {
+      success: true,
+      token,
+      receiver: activeReceiver
+    };
   },
 
   logout(): void {

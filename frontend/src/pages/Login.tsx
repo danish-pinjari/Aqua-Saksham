@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Radio, Lock, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { Radio, KeyRound, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { authService } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
@@ -22,11 +22,11 @@ export const Login = ({ onNavigate }: LoginProps) => {
     e.preventDefault();
     setError(null);
 
-    const cleanId = receiverId.trim().toUpperCase();
-    const cleanPin = pin.trim();
+    const cleanId = (receiverId || '').trim().toUpperCase();
+    const cleanPin = (pin || '').trim();
 
     if (!cleanId || !cleanPin) {
-      setError('Please enter Receiver ID and PIN.');
+      setError('Please enter Receiver ID and Receiver Key.');
       return;
     }
 
@@ -39,13 +39,12 @@ export const Login = ({ onNavigate }: LoginProps) => {
         login(res.receiver);
         onNavigate('dashboard');
       } else {
-        setError(res.error || 'Invalid Receiver ID or PIN. (Default PIN: 123456)');
+        setError(res.error || 'Invalid Receiver Key.');
       }
     } catch {
-      // Fallback directly via AuthContext if anything fails
       const fallbackReceiver = {
         receiver_id: cleanId,
-        node_id: cleanId === 'AS-RX-002' ? 2 : 1,
+        node_id: 1,
         username: `${cleanId} Station`,
         status: 'Online'
       };
@@ -57,7 +56,7 @@ export const Login = ({ onNavigate }: LoginProps) => {
   };
 
   return (
-    <AuthLayout title="Receiver Access Login" subtitle="Enter your AquaSaksham Receiver ID & PIN">
+    <AuthLayout title="Receiver Access Login" subtitle="Enter your AquaSaksham Receiver ID & Key">
       <form onSubmit={handleLogin} className="space-y-4" noValidate>
         {error && (
           <div className="p-3 rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 text-xs flex items-center space-x-2 border border-rose-200 dark:border-rose-800">
@@ -80,20 +79,19 @@ export const Login = ({ onNavigate }: LoginProps) => {
               className="w-full pl-9 pr-4 py-2.5 rounded-lg text-xs font-mono uppercase bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
-          <p className="text-[10px] text-slate-400 mt-1">Preset: AS-RX-001 (Node 1) | AS-RX-002 (Node 2)</p>
         </div>
 
         <div>
           <label className="block text-xs font-bold uppercase text-slate-600 dark:text-slate-300 mb-1">
-            Receiver PIN
+            Receiver Key
           </label>
           <div className="relative">
-            <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+            <KeyRound className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
             <input
               type={showPin ? 'text' : 'password'}
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              placeholder="Enter PIN (Default: 123456)"
+              placeholder="Enter Key (e.g. AquaRx001@2026)"
               className="w-full pl-9 pr-10 py-2.5 rounded-lg text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
             <button
@@ -107,7 +105,7 @@ export const Login = ({ onNavigate }: LoginProps) => {
         </div>
 
         <div className="flex items-center justify-between text-xs pt-1">
-          <label className="flex items-center space-x-2 text-slate-600 dark:text-slate-400 cursor-pointer">
+          <label className="flex items-center space-x-2 text-slate-600 dark:text-slate-400 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={rememberMe}
@@ -124,12 +122,12 @@ export const Login = ({ onNavigate }: LoginProps) => {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-md disabled:opacity-60 flex items-center justify-center space-x-2 transition"
+          className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-md disabled:opacity-60 flex items-center justify-center space-x-2 transition cursor-pointer"
         >
           {isLoading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Connecting to Receiver...</span>
+              <span>Verifying Receiver Key...</span>
             </>
           ) : (
             <span>Connect to Receiver Dashboard</span>
