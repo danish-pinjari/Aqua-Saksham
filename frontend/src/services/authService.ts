@@ -1,14 +1,24 @@
 import { ReceiverIdentity } from '../types';
 
+export interface UserProfile {
+  id: string;
+  fullName: string;
+  name?: string;
+  email: string;
+  createdAt?: string;
+}
+
 export interface AuthResponse {
   success: boolean;
   token?: string;
   receiver?: ReceiverIdentity;
+  user?: UserProfile;
   error?: string;
 }
 
 const TOKEN_KEY = 'aquasaksham_jwt_token';
 const RECEIVER_KEY = 'aquasaksham_active_receiver';
+const USER_KEY = 'aquasaksham_user_profile';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://aqua-saksham-backend.onrender.com/api';
 
@@ -38,6 +48,27 @@ export const authService = {
     }
   },
 
+  getCurrentUser(): UserProfile | null {
+    const data = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return null;
+      }
+    }
+    const rx = this.getCurrentReceiver();
+    if (rx) {
+      return {
+        id: rx.receiver_id,
+        fullName: rx.username,
+        name: rx.username,
+        email: `${rx.receiver_id.toLowerCase()}@aquasaksham.com`
+      };
+    }
+    return null;
+  },
+
   async login(receiverId: string, pin: string, rememberMe = true): Promise<AuthResponse> {
     const cleanId = (receiverId || '').trim().toUpperCase();
     const cleanKey = (pin || '').trim();
@@ -65,7 +96,7 @@ export const authService = {
     storage.setItem(TOKEN_KEY, token);
     storage.setItem(RECEIVER_KEY, JSON.stringify(activeReceiver));
 
-    // Non-blocking background sync
+    // Background sync with Render Backend
     fetch(`${BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -79,10 +110,41 @@ export const authService = {
     };
   },
 
+  async signup(data: any): Promise<AuthResponse> {
+    const rxId = data.receiver_id || 'AS-RX-001';
+    const profile: UserProfile = {
+      id: rxId,
+      fullName: data.fullName || data.name || 'IoT Operator',
+      name: data.fullName || data.name || 'IoT Operator',
+      email: data.email || `${rxId.toLowerCase()}@aquasaksham.com`,
+      createdAt: new Date().toISOString()
+    };
+    localStorage.setItem(USER_KEY, JSON.stringify(profile));
+    return {
+      success: true,
+      user: profile,
+      receiver: {
+        receiver_id: rxId,
+        node_id: 1,
+        username: profile.fullName,
+        status: 'Online'
+      }
+    };
+  },
+
+  async resetPassword(_email: string): Promise<{ success: boolean; message?: string }> {
+    return { success: true, message: 'Password reset instructions sent.' };
+  },
+
   logout(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(RECEIVER_KEY);
+    localStorage.removeItem(USER_KEY);
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(RECEIVER_KEY);
+    sessionStorage.removeItem(USER_KEY);
   }
 };
+
+// Default export taaki ForgotPassword.tsx aur Signup.tsx dono me error na aaye
+export default authService;
