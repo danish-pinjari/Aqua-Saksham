@@ -59,6 +59,8 @@ export const postSensorData = async (req: Request, res: Response) => {
       );
     }
 
+    console.log(`[Sensor Ingestion SUCCESS] ${rawReceiverId} -> pH: ${numericPh}, TDS: ${numericTds}, Turbidity: ${numericTurbidity}`);
+
     return res.status(201).json({
       success: true,
       message: 'Telemetry recorded successfully',
@@ -66,19 +68,26 @@ export const postSensorData = async (req: Request, res: Response) => {
       risk: riskResult.riskScore
     });
   } catch (error) {
+    console.error('[Sensor Ingestion Error]:', error);
     return res.status(500).json({ success: false, error: (error as Error).message });
   }
 };
 
 export const getLatestReading = async (req: Request, res: Response) => {
   try {
-    const targetReceiver = (req.headers['x-receiver-id'] || 'AS-RX-001').toString().trim().toUpperCase();
+    const targetReceiver = (req.headers['x-receiver-id'] || (req as any).user?.receiver_id || 'AS-RX-001').toString().trim().toUpperCase();
     const db = await getDb();
 
-    const row = await db.get(
+    // 1. Try finding latest for this specific receiver
+    let row = await db.get(
       `SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY id DESC LIMIT 1`,
       targetReceiver
     );
+
+    // 2. If not found by receiver_id, fetch the absolute latest reading across all nodes
+    if (!row) {
+      row = await db.get(`SELECT * FROM sensor_readings ORDER BY id DESC LIMIT 1`);
+    }
 
     if (row) {
       return res.json({
@@ -93,6 +102,7 @@ export const getLatestReading = async (req: Request, res: Response) => {
       });
     }
 
+    // Default fallback if database has zero rows
     return res.json({
       receiver_id: targetReceiver,
       nodeId: 1,
