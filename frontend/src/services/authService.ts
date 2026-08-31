@@ -96,7 +96,7 @@ export const authService = {
     storage.setItem(TOKEN_KEY, token);
     storage.setItem(RECEIVER_KEY, JSON.stringify(activeReceiver));
 
-    // Background sync with Render Backend
+    // Background ping to Render backend
     fetch(`${BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -110,23 +110,35 @@ export const authService = {
     };
   },
 
-  async signup(data: any): Promise<AuthResponse> {
-    const rxId = data.receiver_id || 'AS-RX-001';
+  // Supports both signup(dataObject) AND signup(fullName, email, password)
+  async signup(firstArg: any, emailArg?: string, _passwordArg?: string): Promise<AuthResponse> {
+    let name = 'IoT Operator';
+    let email = 'operator@aquasaksham.com';
+
+    if (typeof firstArg === 'object' && firstArg !== null) {
+      name = firstArg.fullName || firstArg.name || name;
+      email = firstArg.email || email;
+    } else if (typeof firstArg === 'string') {
+      name = firstArg;
+      email = emailArg || email;
+    }
+
     const profile: UserProfile = {
-      id: rxId,
-      fullName: data.fullName || data.name || 'IoT Operator',
-      name: data.fullName || data.name || 'IoT Operator',
-      email: data.email || `${rxId.toLowerCase()}@aquasaksham.com`,
+      id: 'AS-RX-001',
+      fullName: name,
+      name: name,
+      email: email,
       createdAt: new Date().toISOString()
     };
+
     localStorage.setItem(USER_KEY, JSON.stringify(profile));
     return {
       success: true,
       user: profile,
       receiver: {
-        receiver_id: rxId,
+        receiver_id: 'AS-RX-001',
         node_id: 1,
-        username: profile.fullName,
+        username: name,
         status: 'Online'
       }
     };
@@ -146,5 +158,4 @@ export const authService = {
   }
 };
 
-// Default export taaki ForgotPassword.tsx aur Signup.tsx dono me error na aaye
 export default authService;
