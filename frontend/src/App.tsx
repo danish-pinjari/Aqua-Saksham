@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
@@ -26,12 +26,10 @@ function MainAppContent() {
     );
   }
 
-  // Not authenticated -> Render Login
   if (!isAuthenticated) {
-    return <Login onNavigate={setCurrentPage} />;
+    return <Login onSuccess={() => setCurrentPage('dashboard')} />;
   }
 
-  // Render active dashboard page
   const renderDashboardContent = () => {
     switch (currentPage) {
       case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;

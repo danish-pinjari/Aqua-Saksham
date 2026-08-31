@@ -26,7 +26,8 @@ import {
 } from 'recharts';
 
 export const Dashboard: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
-  const { receiver } = useAuth();
+  const { user } = useAuth();
+  const receiver = (user as any)?.receiver;
   const [sensor, setSensor] = useState<SensorData>({
     nodeId: 1,
     ph: 7.50,
