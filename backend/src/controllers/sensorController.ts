@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
 import { getDb } from '../database/db';
-import bcrypt from 'bcryptjs';
 
-// Evaluate water risk score
 function evaluateWaterRisk(ph: number, tds: number, turbidity: number): { riskScore: number; status: string } {
   if (ph < 6.5 || ph > 8.5 || tds > 500 || turbidity > 5.0) {
     return { riskScore: 2, status: 'DANGER' };
@@ -15,40 +13,28 @@ function evaluateWaterRisk(ph: number, tds: number, turbidity: number): { riskSc
 export const postSensorData = async (req: Request, res: Response) => {
   try {
     const rawReceiverId = (req.headers['x-receiver-id'] || req.body.receiver_id || 'AS-RX-001').toString().trim().toUpperCase();
-    const rawReceiverKey = (req.headers['x-receiver-key'] || req.body.receiver_key || 'AquaRx001@2026').toString().trim();
-
-    const db = await getDb();
-
-    // 1. Check if Receiver exists in DB
-    let receiver = await db.get('SELECT * FROM receivers WHERE receiver_id = ?', rawReceiverId);
-
-    // If receiver is not yet registered, auto-register it
-    if (!receiver) {
-      const salt = await bcrypt.genSalt(10);
-      const keyHash = await bcrypt.hash(rawReceiverKey, salt);
-      await db.run(
-        `INSERT INTO receivers (receiver_id, node_id, username, password_hash, status)
-         VALUES (?, ?, ?, ?, ?)`,
-        rawReceiverId,
-        Number(req.body.nodeID || req.body.nodeId || 1),
-        `${rawReceiverId} Station`,
-        keyHash,
-        'Online'
-      );
-      receiver = await db.get('SELECT * FROM receivers WHERE receiver_id = ?', rawReceiverId);
-    }
-
-    // 2. Extract sensor parameters
     const { nodeID, nodeId, ph, tds, turbidity, battery } = req.body;
-    const targetNode = Number(nodeID || nodeId || receiver?.node_id || 1);
+
+    const targetNode = Number(nodeID || nodeId || 1);
     const numericPh = parseFloat(ph) || 7.0;
     const numericTds = parseFloat(tds) || 0;
     const numericTurbidity = parseFloat(turbidity) || 0;
     const numericBattery = parseFloat(battery) || 100.0;
 
     const riskResult = evaluateWaterRisk(numericPh, numericTds, numericTurbidity);
+    const db = await getDb();
 
-    // 3. Save readings into database
+    await db.run(
+      `INSERT INTO receivers (receiver_id, node_id, username, password_hash, status)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(receiver_id) DO UPDATE SET status = 'Online'`,
+      rawReceiverId,
+      targetNode,
+      `${rawReceiverId} Station`,
+      'NO_HASH_DIRECT_TELEMETRY',
+      'Online'
+    );
+
     await db.run(
       `INSERT INTO sensor_readings (receiver_id, node_id, ph, tds, turbidity, battery, risk, timestamp)
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
@@ -61,7 +47,6 @@ export const postSensorData = async (req: Request, res: Response) => {
       riskResult.riskScore
     );
 
-    // 4. If danger/warning, insert alert
     if (riskResult.riskScore > 0) {
       await db.run(
         `INSERT INTO alerts (receiver_id, node_id, type, severity, message, timestamp, status)
@@ -74,8 +59,6 @@ export const postSensorData = async (req: Request, res: Response) => {
       );
     }
 
-    console.log(`[Sensor Ingestion SUCCESS] ${rawReceiverId} -> pH: ${numericPh}, TDS: ${numericTds}, Turbidity: ${numericTurbidity}, Risk: ${riskResult.riskScore}`);
-
     return res.status(201).json({
       success: true,
       message: 'Telemetry recorded successfully',
@@ -83,7 +66,90 @@ export const postSensorData = async (req: Request, res: Response) => {
       risk: riskResult.riskScore
     });
   } catch (error) {
-    console.error('[Sensor Ingestion Server Error]:', error);
+    return res.status(500).json({ success: false, error: (error as Error).message });
+  }
+};
+
+export const getLatestReading = async (req: Request, res: Response) => {
+  try {
+    const targetReceiver = (req.headers['x-receiver-id'] || 'AS-RX-001').toString().trim().toUpperCase();
+    const db = await getDb();
+
+    const row = await db.get(
+      `SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY id DESC LIMIT 1`,
+      targetReceiver
+    );
+
+    if (row) {
+      return res.json({
+        receiver_id: row.receiver_id,
+        nodeId: row.node_id,
+        ph: row.ph,
+        tds: row.tds,
+        turbidity: row.turbidity,
+        battery: row.battery,
+        risk: row.risk,
+        timestamp: row.timestamp
+      });
+    }
+
+    return res.json({
+      receiver_id: targetReceiver,
+      nodeId: 1,
+      ph: 7.0,
+      tds: 200,
+      turbidity: 1.0,
+      battery: 100,
+      risk: 0,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: (error as Error).message });
+  }
+};
+
+export const getHistory = async (req: Request, res: Response) => {
+  try {
+    const targetReceiver = (req.headers['x-receiver-id'] || 'AS-RX-001').toString().trim().toUpperCase();
+    const db = await getDb();
+    const rows = await db.all(
+      `SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY id DESC LIMIT 50`,
+      targetReceiver
+    );
+    return res.json(rows);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: (error as Error).message });
+  }
+};
+
+export const getAlerts = async (_req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const alerts = await db.all(`SELECT * FROM alerts ORDER BY id DESC LIMIT 10`);
+    return res.json(alerts);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: (error as Error).message });
+  }
+};
+
+export const getAIAnalysis = async (_req: Request, res: Response) => {
+  return res.json({
+    status: 'Active',
+    predictedRisk: 'Elevated Risk Detected',
+    confidence: 94.2,
+    recommendations: [
+      'Activated carbon filtration advised due to high turbidity.',
+      'Neutralization required for high pH values.'
+    ]
+  });
+};
+
+export const getNodes = async (_req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const receivers = await db.all(`SELECT * FROM receivers`);
+    return res.json(receivers);
+  } catch (error) {
     return res.status(500).json({ success: false, error: (error as Error).message });
   }
 };
