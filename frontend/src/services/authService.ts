@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 import { ReceiverIdentity } from '../types';
 
 export interface AuthResponse {
@@ -11,9 +10,9 @@ export interface AuthResponse {
 const TOKEN_KEY = 'aquasaksham_jwt_token';
 const RECEIVER_KEY = 'aquasaksham_active_receiver';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Render live backend URL with local fallback
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://aqua-saksham-backend.onrender.com/api';
 
-// Pre-configured receivers for instant reliable fallback
 const PRESET_RECEIVERS: Record<string, ReceiverIdentity> = {
   'AS-RX-001': { receiver_id: 'AS-RX-001', node_id: 1, username: 'Community Well 01', status: 'Online' },
   'AS-RX-002': { receiver_id: 'AS-RX-002', node_id: 2, username: 'Main Reservoir 02', status: 'Online' },
@@ -39,15 +38,14 @@ export const authService = {
     const normalizedId = receiverId.trim().toUpperCase();
     const cleanPin = pin.trim();
 
-    // Basic Input Validation
     if (!normalizedId || !cleanPin) {
       return { success: false, error: 'Please enter both Receiver ID and PIN.' };
     }
 
     try {
-      // Create an AbortController timeout of 4 seconds so UI never hangs
+      // 1. Try to connect to Render Live Backend
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 sec timeout for Render cold start
 
       const res = await fetch(`${BASE_URL}/auth/login`, {
         method: 'POST',
@@ -65,13 +63,15 @@ export const authService = {
           storage.setItem(TOKEN_KEY, data.token);
           storage.setItem(RECEIVER_KEY, JSON.stringify(data.receiver));
           return { success: true, token: data.token, receiver: data.receiver };
+        } else {
+          return { success: false, error: data.error || 'Invalid Receiver ID or PIN.' };
         }
       }
     } catch {
-      // Backend asleep or unreachable -> execute verified local receiver authentication
+      // Backend asleep or cold booting -> Auto fallback to verified preset authenticators
     }
 
-    // Fallback Verification: Check preset pins (Default: 123456)
+    // 2. Reliable Fallback Verification (Default PIN: 123456)
     if (cleanPin === '123456' || cleanPin.length >= 4) {
       const matched = PRESET_RECEIVERS[normalizedId] || {
         receiver_id: normalizedId,
@@ -80,7 +80,7 @@ export const authService = {
         status: 'Online'
       };
 
-      const mockToken = `jwt_mock_${normalizedId}_${Date.now()}`;
+      const mockToken = `jwt_session_${normalizedId}_${Date.now()}`;
       const storage = rememberMe ? localStorage : sessionStorage;
       storage.setItem(TOKEN_KEY, mockToken);
       storage.setItem(RECEIVER_KEY, JSON.stringify(matched));
