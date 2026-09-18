@@ -8,8 +8,12 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'https://aqua-saksham-backend.o
 
 function getAuthHeaders(): HeadersInit {
   const token = authService.getToken();
+  const receiver = authService.getCurrentReceiver();
+  const activeRxId = receiver?.receiver_id || 'AS-RX-001';
+
   return {
     'Content-Type': 'application/json',
+    'x-receiver-id': activeRxId,
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 }
@@ -18,19 +22,19 @@ export async function fetchLatestSensorData(): Promise<SensorData> {
   try {
     const res = await fetch(`${BASE_URL}/sensors/latest`, { 
       headers: getAuthHeaders(),
-      cache: 'no-store' // Fresh actual data ensure karega
+      cache: 'no-store' // Cache bypass karke fresh real-time readings fetch karega
     });
 
     if (!res.ok) {
-      console.warn(`[API] Sensors endpoint responded with HTTP ${res.status}`);
+      console.warn(`[API] /sensors/latest endpoint responded with HTTP ${res.status}`);
       throw new Error(`HTTP Error: ${res.status}`);
     }
 
     const data = await res.json();
-    console.log('[API] Live Telemetry Data Loaded:', data);
+    console.log('[API Live Telemetry Data Received]:', data);
     return data;
   } catch (error) {
-    console.warn('[API] Failed to fetch live sensor data, using fallback:', error);
+    console.warn('[API] Backend se live data match nahi hua, fallback mock return ho raha hai:', error);
     const receiver = authService.getCurrentReceiver();
     const mock = getMockSensorData();
     return {
@@ -51,7 +55,7 @@ export async function fetchAIAnalysis(): Promise<AIAnalysisData> {
     const data = await res.json();
     return data;
   } catch (error) {
-    console.warn('[API] Fallback AI Analysis loaded:', error);
+    console.warn('[API] AI Analysis fallback loaded:', error);
     return initialMockAI;
   }
 }
@@ -67,7 +71,7 @@ export async function fetchAlerts(): Promise<AlertItem[]> {
     const data = await res.json();
     return data;
   } catch (error) {
-    console.warn('[API] Fallback Alerts loaded:', error);
+    console.warn('[API] Alerts fallback loaded:', error);
     return initialMockAlerts;
   }
 }
@@ -83,7 +87,7 @@ export async function fetchNodes(): Promise<NodeItem[]> {
     const data = await res.json();
     return data;
   } catch (error) {
-    console.warn('[API] Fallback Nodes loaded:', error);
+    console.warn('[API] Nodes fallback loaded:', error);
     return initialMockNodes;
   }
 }
