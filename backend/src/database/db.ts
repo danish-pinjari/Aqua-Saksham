@@ -58,3 +58,8 @@ export async function getDb(): Promise<Database> {
 
   return dbInstance;
 }
+
+// Alias function so server.ts imports work cleanly
+export async function initDatabase(): Promise<Database> {
+  return await getDb();
+}
