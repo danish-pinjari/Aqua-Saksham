@@ -4,6 +4,8 @@ import { authService } from '../services/authService';
 
 interface AuthContextType {
   receiver: ReceiverIdentity | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
   login: (receiver: ReceiverIdentity) => void;
   logout: () => void;
 }
@@ -19,6 +21,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       status: 'Online'
     };
   });
+  const [isLoading] = useState<boolean>(false);
 
   const login = (rec: ReceiverIdentity) => {
     setReceiver(rec);
@@ -30,7 +33,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ receiver, login, logout }}>
+    <AuthContext.Provider 
+      value={{ 
+        receiver, 
+        isAuthenticated: !!receiver, 
+        isLoading, 
+        login, 
+        logout 
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
