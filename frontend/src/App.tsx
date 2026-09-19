@@ -19,7 +19,6 @@ function MainAppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const [authView, setAuthView] = useState<'login' | 'signup' | 'forgot-password'>('login');
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -29,7 +28,6 @@ function MainAppContent() {
     );
   }
 
-  // Auth views
   if (!isAuthenticated) {
     if (authView === 'signup') {
       return <Signup onNavigate={() => setAuthView('login')} />;
@@ -43,42 +41,42 @@ function MainAppContent() {
           if (target === 'dashboard') {
             setCurrentPage('dashboard');
           } else {
-            setAuthView(target as 'login' | 'signup' | 'forgot-password');
+            setAuthView(target);
           }
         }}
       />
     );
   }
 
-  // Dashboard views
   const renderDashboardContent = () => {
     switch (currentPage) {
-      case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;
-      case 'live': return <LiveMonitoring />;
-      case 'history': return <History />;
-      case 'ai': return <AIAnalysis />;
-      case 'alerts': return <Alerts />;
-      case 'nodes': return <SensorNodes />;
-      case 'settings': return <Settings />;
-      case 'about': return <About />;
-      default: return <Dashboard onNavigate={setCurrentPage} />;
+      case 'dashboard':
+        return <Dashboard onNavigate={setCurrentPage} />;
+      case 'live':
+        return <LiveMonitoring />;
+      case 'history':
+        return <History />;
+      case 'ai':
+        return <AIAnalysis />;
+      case 'alerts':
+        return <Alerts />;
+      case 'nodes':
+        return <SensorNodes />;
+      case 'settings':
+        return <Settings />;
+      case 'about':
+        return <About />;
+      default:
+        return <Dashboard onNavigate={setCurrentPage} />;
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans antialiased transition-colors">
-      <Header 
-        isSidebarOpen={isSidebarOpen} 
-        setIsSidebarOpen={setIsSidebarOpen} 
-      />
-      <div className="flex flex-1 relative overflow-x-hidden">
-        <Sidebar 
-          currentPage={currentPage} 
-          setCurrentPage={setCurrentPage}
-          isOpen={isSidebarOpen}
-          setIsOpen={setIsSidebarOpen}
-        />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-x-hidden">
+      <Header />
+      <div className="flex flex-1">
+        <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
+        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
           {renderDashboardContent()}
         </main>
       </div>

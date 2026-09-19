@@ -1,47 +1,56 @@
 import { Request, Response } from 'express';
 import { getDb } from '../database/db';
+import { evaluateWaterRisk } from '../services/riskEngine';
+import { SensorReading, AuthenticatedRequest } from '../models/types';
 
-function evaluateWaterRisk(ph: number, tds: number, turbidity: number): { riskScore: number; status: string } {
-  if (ph < 6.5 || ph > 8.5 || tds > 500 || turbidity > 5.0) {
-    return { riskScore: 2, status: 'DANGER' };
-  } else if (ph < 6.8 || ph > 8.2 || tds > 300 || turbidity > 3.0) {
-    return { riskScore: 1, status: 'WARNING' };
-  }
-  return { riskScore: 0, status: 'SAFE' };
-}
-
-export const postSensorData = async (req: Request, res: Response) => {
+// Data Ingestion (ESP32 / LoRa Gateway se aane wala data)
+export const postSensorData = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const rawReceiverId = (req.headers['x-receiver-id'] || req.body.receiver_id || 'AS-RX-001').toString().trim().toUpperCase();
-    const { nodeID, nodeId, ph, tds, turbidity, battery } = req.body;
+    // IMPORTANT: receiver identity comes from authenticated device credentials.
+    // Never trust receiver_id/nodeID supplied by the JSON body.
+    const activeReceiverId = req.user?.receiver_id;
+    const activeNodeId = req.user?.node_id;
 
-    const targetNode = Number(nodeID || nodeId || 1);
-    const numericPh = parseFloat(ph) || 7.0;
-    const numericTds = parseFloat(tds) || 0;
-    const numericTurbidity = parseFloat(turbidity) || 0;
-    const numericBattery = parseFloat(battery) || 100.0;
+    if (!activeReceiverId || activeNodeId === undefined) {
+      return res.status(403).json({
+        success: false,
+        error: 'Receiver authentication failed.'
+      });
+    }
 
-    const riskResult = evaluateWaterRisk(numericPh, numericTds, numericTurbidity);
-    const db = await getDb();
+    const { ph, tds, turbidity, battery } = req.body;
 
-    // Auto-register / update active receiver state
-    await db.run(
-      `INSERT INTO receivers (receiver_id, node_id, username, password_hash, status)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(receiver_id) DO UPDATE SET status = 'Online'`,
-      rawReceiverId,
-      targetNode,
-      `${rawReceiverId} Station`,
-      'NO_HASH_DIRECT_TELEMETRY',
-      'Online'
+    const numericPh = Number(ph);
+    const numericTds = Number(tds);
+    const numericTurbidity = Number(turbidity);
+    const numericBattery = Number(battery !== undefined ? battery : 100);
+
+    if (
+      !Number.isFinite(numericPh) ||
+      !Number.isFinite(numericTds) ||
+      !Number.isFinite(numericTurbidity) ||
+      !Number.isFinite(numericBattery)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sensor values.'
+      });
+    }
+
+    const riskResult = evaluateWaterRisk(
+      numericPh,
+      numericTds,
+      numericTurbidity
     );
 
-    // Save strictly under receiver_id
+    const db = await getDb();
+
     await db.run(
-      `INSERT INTO sensor_readings (receiver_id, node_id, ph, tds, turbidity, battery, risk, timestamp)
+      `INSERT INTO sensor_readings
+       (receiver_id, node_id, ph, tds, turbidity, battery, risk, timestamp)
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-      rawReceiverId,
-      targetNode,
+      activeReceiverId,
+      activeNodeId,
       numericPh,
       numericTds,
       numericTurbidity,
@@ -49,119 +58,115 @@ export const postSensorData = async (req: Request, res: Response) => {
       riskResult.riskScore
     );
 
-    if (riskResult.riskScore > 0) {
-      await db.run(
-        `INSERT INTO alerts (receiver_id, node_id, type, severity, message, timestamp, status)
-         VALUES (?, ?, ?, ?, ?, datetime('now'), 'New')`,
-        rawReceiverId,
-        targetNode,
-        riskResult.riskScore === 2 ? 'Critical Risk' : 'Parameter Warning',
-        riskResult.riskScore === 2 ? 'High' : 'Medium',
-        `pH: ${numericPh.toFixed(2)}, TDS: ${numericTds.toFixed(0)} ppm, Turbidity: ${numericTurbidity.toFixed(2)} NTU`
-      );
-    }
-
-    console.log(`[Sensor Telemetry Ingestion SUCCESS] ${rawReceiverId} -> pH: ${numericPh}, TDS: ${numericTds}, Turbidity: ${numericTurbidity}`);
-
     return res.status(201).json({
       success: true,
-      message: 'Telemetry recorded successfully',
-      receiver_id: rawReceiverId,
+      receiver_id: activeReceiverId,
+      node_id: activeNodeId,
       risk: riskResult.riskScore
     });
   } catch (error) {
-    console.error('[Sensor Ingestion Error]:', error);
-    return res.status(500).json({ success: false, error: (error as Error).message });
+    return res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
   }
 };
 
-// Isolated latest reading query
-export const getLatestReading = async (req: Request, res: Response) => {
+// ISOLATED: Sirf logged-in receiver ka latest data aayega
+export const getLatestReading = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const targetReceiver = (req.headers['x-receiver-id'] || (req as any).user?.receiver_id || 'AS-RX-001').toString().trim().toUpperCase();
+    const activeReceiverId = req.user?.receiver_id;
     const db = await getDb();
-
-    // STRICT QUERY: Filter by logged in receiver_id
-    const row = await db.get(
-      `SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY id DESC LIMIT 1`,
-      targetReceiver
+    const reading = await db.get<SensorReading>(
+      'SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY timestamp DESC LIMIT 1',
+      activeReceiverId
     );
 
-    if (row) {
+    if (!reading) {
       return res.json({
-        receiver_id: row.receiver_id,
-        nodeId: row.node_id,
-        ph: row.ph,
-        tds: row.tds,
-        turbidity: row.turbidity,
-        battery: row.battery,
-        risk: row.risk,
-        timestamp: row.timestamp
+        receiver_id: activeReceiverId,
+        nodeId: req.user?.node_id || 1,
+        ph: 7.5,
+        tds: 370,
+        turbidity: 3.5,
+        battery: 100,
+        risk: 0,
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Default baseline if no readings exist for this receiver yet
     return res.json({
-      receiver_id: targetReceiver,
-      nodeId: 1,
-      ph: 7.0,
-      tds: 0,
-      turbidity: 0.0,
-      battery: 100,
-      risk: 0,
-      timestamp: new Date().toISOString()
+      receiver_id: reading.receiver_id,
+      nodeId: reading.node_id,
+      ph: reading.ph,
+      tds: reading.tds,
+      turbidity: reading.turbidity,
+      battery: reading.battery,
+      risk: reading.risk,
+      timestamp: reading.timestamp
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message });
   }
 };
 
-export const getHistory = async (req: Request, res: Response) => {
+// ISOLATED: Sirf logged-in receiver ki history aayegi
+export const getHistory = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const targetReceiver = (req.headers['x-receiver-id'] || (req as any).user?.receiver_id || 'AS-RX-001').toString().trim().toUpperCase();
+    const activeReceiverId = req.user?.receiver_id;
+    const limit = Number(req.query.limit) || 50;
     const db = await getDb();
-    const rows = await db.all(
-      `SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY id DESC LIMIT 50`,
-      targetReceiver
+    const records = await db.all(
+      'SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY timestamp DESC LIMIT ?',
+      activeReceiverId, limit
     );
-    return res.json(rows);
+    return res.json(records);
   } catch (error) {
-    return res.status(500).json({ success: false, error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message });
   }
 };
 
-export const getAlerts = async (req: Request, res: Response) => {
+// ISOLATED: Alerts
+export const getAlerts = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const targetReceiver = (req.headers['x-receiver-id'] || (req as any).user?.receiver_id || 'AS-RX-001').toString().trim().toUpperCase();
+    const activeReceiverId = req.user?.receiver_id;
     const db = await getDb();
     const alerts = await db.all(
-      `SELECT * FROM alerts WHERE receiver_id = ? ORDER BY id DESC LIMIT 10`,
-      targetReceiver
+      'SELECT * FROM alerts WHERE receiver_id = ? ORDER BY timestamp DESC LIMIT 20',
+      activeReceiverId
     );
     return res.json(alerts);
   } catch (error) {
-    return res.status(500).json({ success: false, error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message });
   }
 };
 
-export const getAIAnalysis = async (_req: Request, res: Response) => {
-  return res.json({
-    status: 'Active',
-    predictedRisk: 'Heuristic Assessment Active',
-    confidence: 96.5,
-    recommendations: [
-      'Maintain continuous LoRa gateway connectivity.',
-      'Check pH buffer calibration periodically.'
-    ]
-  });
-};
-
-export const getNodes = async (_req: Request, res: Response) => {
+// ISOLATED: AI Analysis
+export const getAIAnalysis = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const activeReceiverId = req.user?.receiver_id;
     const db = await getDb();
-    const receivers = await db.all(`SELECT * FROM receivers`);
-    return res.json(receivers);
+    const reading = await db.get<SensorReading>(
+      'SELECT * FROM sensor_readings WHERE receiver_id = ? ORDER BY timestamp DESC LIMIT 1',
+      activeReceiverId
+    );
+
+    const evalData = reading
+      ? evaluateWaterRisk(reading.ph, reading.tds, reading.turbidity)
+      : evaluateWaterRisk(7.5, 370, 3.5);
+
+    return res.json({
+      receiver_id: activeReceiverId,
+      status: 'Active',
+      confidence: '94%',
+      lastAnalysis: reading ? reading.timestamp : new Date().toISOString(),
+      risk: evalData.riskLabel,
+      diseaseRisk: `${evalData.diseaseRiskPercent}%`,
+      recommendation: evalData.recommendation,
+      solution: evalData.solution,
+      type: 'AquaSaksham Heuristic Anomaly Engine'
+    });
   } catch (error) {
-    return res.status(500).json({ success: false, error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message });
   }
 };
