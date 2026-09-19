@@ -1,56 +1,48 @@
-import React, { createContext, useContext, useState } from 'react';
-import { ReceiverIdentity } from '../types';
-import { authService } from '../services/authService';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authService, UserProfile } from '../services/authService';
 
 interface AuthContextType {
-  receiver: ReceiverIdentity | null;
+  user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (receiver: ReceiverIdentity) => void;
+  login: (user: UserProfile) => void;
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
+  login: () => {},
+  logout: () => {}
+});
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [receiver, setReceiver] = useState<ReceiverIdentity | null>(() => {
-    return authService.getCurrentReceiver() || {
-      receiver_id: 'AS-RX-001',
-      node_id: 1,
-      username: 'Community Well 01',
-      status: 'Online'
-    };
-  });
-  const [isLoading] = useState<boolean>(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = (rec: ReceiverIdentity) => {
-    setReceiver(rec);
+  useEffect(() => {
+    const existing = authService.getCurrentUser();
+    if (existing) {
+      setUser(existing);
+    }
+    setIsLoading(false);
+  }, []);
+
+  const login = (newUser: UserProfile) => {
+    setUser(newUser);
   };
 
   const logout = () => {
     authService.logout();
-    setReceiver(null);
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider 
-      value={{ 
-        receiver, 
-        isAuthenticated: !!receiver, 
-        isLoading, 
-        login, 
-        logout 
-      }}
-    >
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);
